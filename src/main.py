@@ -14,6 +14,25 @@ from typing import Any
 from requests import Response, get, RequestException  # type: ignore
 
 
+class Bar:
+    """A class to represent a single bar of stock market data."""
+
+    def __init__(self, data: dict):
+        # For now, the date is not used.
+        # self.date = data["date"]
+        self.open: float = float(data["open"].replace("$", ""))
+        self.high: float = float(data["high"].replace("$", ""))
+        self.low: float = float(data["low"].replace("$", ""))
+        self.close: float = float(data["close"].replace("$", ""))
+        self.volume: int = int(data["volume"].replace(",", ""))
+
+    def __str__(self) -> str:
+        return f"Open: {self.open}, High: {self.high}, Low: {self.low}, Close: {self.close}, Volume: {self.volume}"
+
+    def __repr__(self) -> str:
+        return f"Bar({self.open}, {self.high}, {self.low}, {self.close}, {self.volume})"
+
+
 class StockCollectionException(Exception):
     """An exception class for the StockData class."""
 
@@ -59,6 +78,12 @@ class StockData:
             self.error = f"Error: {e}"
             return None
 
+    def process_data(self) -> None:
+        """Process the data collected from the API."""
+        for _bar in self.bars:
+            b = Bar(_bar)
+            print(b)
+
     def __str__(self) -> str:
         """String representation of the class."""
         return f"{self.bars}"
@@ -74,4 +99,5 @@ class StockData:
 
 
 if __name__ == "__main__":
-    print(StockData("AAPL"))
+    aapl = StockData("AAPL")
+    aapl.process_data()

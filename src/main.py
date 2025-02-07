@@ -10,7 +10,9 @@ Description: This program will analyze stock market data from the NASDAQ API
 # pylint: disable=line-too-long
 
 from datetime import date
+import json
 from typing import Any, List
+import sys
 from requests import Response, get, RequestException  # type: ignore
 
 
@@ -44,13 +46,13 @@ class StockData:
     years_back: int = 5
 
     # The number of data points to collect.
-    limit: int = 9999
+    limit: int = 5
 
     def construct_url(self, start: str, limit: int) -> str:
         """Create a URL to query the NASDAQ API"""
         return f"https://api.nasdaq.com/api/quote/{self.symbol.upper()}/historical?assetclass=stocks&fromdate={start}&limit={limit}"
 
-    def get_ticker_data(self) -> Any:
+    def get_ticker_data(self) -> List[Bar]:
         """
         Get stock market data for a given symbol. A user agent must be provided
         otherwise the API will hangup. I provided my user agent from my desktop.
@@ -67,34 +69,29 @@ class StockData:
                     "Content-Type": "application/json",
                 },
             )
-            if data.status_code != 200:
-                self.error = f"Error: {data.status_code} - {data.reason}"
-                return None
+            if data.status_code != 200 or data.json()["data"] is None:
+                self.error = f"Error: {data.json()["status"]["rCode"]}: {data.json()["status"]["bCodeMessage"][0]["errorMessage"]} ({self.symbol})"
+                return []
 
-            return data.json()["data"]["tradesTable"]["rows"]
+            if data.json()["data"]["tradesTable"]["rows"] is None:
+                self.error = f"Error: No data found for {self.symbol}"
+                return []
+
+            bars: List[Bar] = [
+                Bar(_bar) for _bar in data.json()["data"]["tradesTable"]["rows"]
+            ]
+            self.min = round(min(_bar.close for _bar in bars), 2)
+            self.max = round(max(_bar.close for _bar in bars), 2)
+            self.avg = round(sum(_bar.close for _bar in bars) / len(bars), 2)
+            self.median = round(sorted(_bar.close for _bar in bars)[len(bars) // 2], 2)
+            return bars
 
         # There are far too many exceptions to catch, so I'm just going to catch all
         except RequestException as e:
             self.error = f"Error: {e}"
-            return None
+            return []
 
-    def process_data(self) -> Any:
-        """
-        Process the data collected from the API.
-        This method returns itself to allow for method chaining.
-        """
-        bars: List[Bar] = [Bar(_bar) for _bar in self.bars]
-
-        # Calculations will be based on the market CLOSE price.
-        # This is the most important price for traders.
-        self.min = round(min(_bar.close for _bar in bars), 2)
-        self.max = round(max(_bar.close for _bar in bars), 2)
-        self.avg = round(sum(_bar.close for _bar in bars) / len(bars), 2)
-        self.median = round(sorted(_bar.close for _bar in bars)[len(bars) // 2], 2)
-
-        return self
-
-    def get_data(self) -> dict:
+    def get_data(self) -> dict[str, Any]:
         """Return the data points as a dictionary."""
         return {
             "symbol": self.symbol,
@@ -105,25 +102,34 @@ class StockData:
         }
 
     def __str__(self) -> str:
-        """String representation of the class."""
-        return f"{self.bars}"
+        """Return a string representation of the stock data."""
+        return f"Symbol: {self.symbol}, Min: {self.min}, Max: {self.max}, Avg: {self.avg}, Median: {self.median}"
 
     def __init__(self, symbol: str):
         """Create a new stock data object."""
         self.symbol = symbol
         self.error = ""
-        self.bars = self.get_ticker_data()
 
-        self.min = 0.0
-        self.max = 0.0
-        self.avg = 0.0
-        self.median = 0.0
+        self.min, self.max, self.avg, self.median = (0, 0, 0, 0)
+        self.__bars = self.get_ticker_data()
 
-        if self.error != "" or self.bars is None:
+        if self.error != "" or self.__bars is None:
             raise StockCollectionException(self.error)
 
 
 if __name__ == "__main__":
-    print(StockData("AAPL").process_data().get_data())
-    print(StockData("NVDA").process_data().get_data())
-    print(StockData("TSLA").process_data().get_data())
+    if len(sys.argv) < 2:
+        print("Usage: python main.py [symbol...]")
+        sys.exit(1)
+
+    results: List[dict] = []
+    for arg in sys.argv[1:]:
+        try:
+            s = StockData(arg.upper())
+            results.append(s.get_data())
+        except StockCollectionException as e:
+            results.append({"symbol": arg.upper(), "error": str(e)})
+            print(e)
+
+    with open("stock.json", "w", encoding="UTF-8") as file:
+        file.write(json.dumps(results, indent=2))

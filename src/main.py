@@ -10,7 +10,7 @@ Description: This program will analyze stock market data from the NASDAQ API
 # pylint: disable=line-too-long
 
 from datetime import date
-from typing import Any
+from typing import Any, List
 from requests import Response, get, RequestException  # type: ignore
 
 
@@ -41,10 +41,10 @@ class StockData:
     """A class to represent stock market data."""
 
     # The number of years back to collect data from.
-    years_back: int = 1
+    years_back: int = 5
 
     # The number of data points to collect.
-    limit: int = 10
+    limit: int = 9999
 
     def construct_url(self, start: str, limit: int) -> str:
         """Create a URL to query the NASDAQ API"""
@@ -78,11 +78,31 @@ class StockData:
             self.error = f"Error: {e}"
             return None
 
-    def process_data(self) -> None:
-        """Process the data collected from the API."""
-        for _bar in self.bars:
-            b = Bar(_bar)
-            print(b)
+    def process_data(self) -> Any:
+        """
+        Process the data collected from the API.
+        This method returns itself to allow for method chaining.
+        """
+        bars: List[Bar] = [Bar(_bar) for _bar in self.bars]
+
+        # Calculations will be based on the market CLOSE price.
+        # This is the most important price for traders.
+        self.min = round(min(_bar.close for _bar in bars), 2)
+        self.max = round(max(_bar.close for _bar in bars), 2)
+        self.avg = round(sum(_bar.close for _bar in bars) / len(bars), 2)
+        self.median = round(sorted(_bar.close for _bar in bars)[len(bars) // 2], 2)
+
+        return self
+
+    def get_data(self) -> dict:
+        """Return the data points as a dictionary."""
+        return {
+            "symbol": self.symbol,
+            "max": self.max,
+            "min": self.min,
+            "avg": self.avg,
+            "median": self.median,
+        }
 
     def __str__(self) -> str:
         """String representation of the class."""
@@ -94,10 +114,16 @@ class StockData:
         self.error = ""
         self.bars = self.get_ticker_data()
 
+        self.min = 0.0
+        self.max = 0.0
+        self.avg = 0.0
+        self.median = 0.0
+
         if self.error != "" or self.bars is None:
             raise StockCollectionException(self.error)
 
 
 if __name__ == "__main__":
-    aapl = StockData("AAPL")
-    aapl.process_data()
+    print(StockData("AAPL").process_data().get_data())
+    print(StockData("NVDA").process_data().get_data())
+    print(StockData("TSLA").process_data().get_data())

@@ -131,5 +131,8 @@ if __name__ == "__main__":
             results.append({"symbol": arg.upper(), "error": str(e)})
             print(e)
 
-    with open("stock.json", "w", encoding="UTF-8") as file:
-        file.write(json.dumps(results, indent=2))
+    try:
+        with open("stock.json", "w", encoding="UTF-8") as file:
+            file.write(json.dumps(results, indent=2))
+    except IOError as e:
+        print("Failed to write to file. {e}")
